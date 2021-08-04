@@ -14,14 +14,21 @@ provider "google" {
   zone        = var.zone
 }
 
-resource "google_compute_network" "vpc_network" {
-  name = "terraform-network"
+# resource "google_compute_network" "vpc_network" {
+#   name = "terraform-network"
+# }
+
+resource "random_id" "instance_id" {
+  byte_length = 8
 }
 
-resource "google_compute_instance" "vm_instance" {
-  name         = "terraform-instance"
+resource "google_compute_instance" "default" {
+  name         = "flask-vm-${random_id.instance_id.hex}"
   machine_type = var.vm_instance_type
   tags         = var.tags
+  metadata = {
+    ssh-keys = "${var.ssh_user}:${file(var.private_key)}"
+  }
 
   boot_disk {
     initialize_params {
@@ -29,9 +36,38 @@ resource "google_compute_instance" "vm_instance" {
     }
   }
 
+  metadata_startup_script = "sudo apt-get update; sudo apt-get install -yq build-essential python-pip rsync; pip install flask"
+
   network_interface {
-    network = google_compute_network.vpc_network.name
+    network = "default"
     access_config {
+    }
+  }
+}
+
+resource "google_compute_firewall" "default" {
+  name    = "flask-app-firewall"
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5000"]
+  }
+
+}
+
+
+resource "google_storage_bucket" "auto-expire" {
+  name          = "auto-expiring-bucket-${random_id.instance_id.hex}"
+  location      = "US"
+  force_destroy = true
+
+  lifecycle_rule {
+    condition {
+      age = 3
+    }
+    action {
+      type = "Delete"
     }
   }
 }
